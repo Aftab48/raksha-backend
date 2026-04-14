@@ -1,6 +1,9 @@
 const crypto = require('crypto');
 const sendEmail = require('../utils/sendEmail');
 const generateOTP = require('../utils/generateOtp');
+const twilio = require('twilio');
+
+const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const hashOtp = (otp) => {
     return crypto.createHash('sha256').update(otp).digest('hex');
@@ -26,16 +29,23 @@ const buildOtpHtml = (otp, purpose) => `
 
 const sendOtpEmail = async (email, purpose = 'register') => {
     const otp = generateOTP();
-    const subject = 'Your OTP for SafeSphere';
+    const subject = 'Your OTP for Raksha';
     const html = buildOtpHtml(otp, purpose);
     const info = await sendEmail(email, subject, html);
 
     return { otp, info };
 };
 
-const sendOtpSMS = async (phoneNumber, otp) => {
-    // Replace this with a real provider such as Twilio, MSG91, or AWS SNS.
-    console.log(`Sending OTP ${otp} to phone number: ${phoneNumber}`);
+const sendOtpSMS = async (phoneNumber) => {
+    const otp = generateOTP();
+    const message = `Your Raksha OTP is: ${otp}. It expires in 10 minutes. If you did not request this, please ignore.`;
+    await twilioClient.messages.create({
+        body: message,
+        from: process.env.TWILIO_FROM_NUMBER,
+        to: phoneNumber,
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID
+    });
+    return otp;
 };
 
 module.exports = {

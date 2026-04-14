@@ -27,11 +27,23 @@ const pendingRegistrationSchema = new mongoose.Schema(
             type: String,
             required: [true, 'Email OTP hash is required']
         },
+        mobileOtpHash: {
+            type: String,
+            required: [true, 'Mobile OTP hash is required']
+        },
         emailVerified: {
             type: Boolean,
             default: false
         },
+        mobileVerified: {
+            type: Boolean,
+            default: false
+        },
         emailOtpAttempts: {
+            type: Number,
+            default: 0
+        },
+        mobileOtpAttempts: {
             type: Number,
             default: 0
         },

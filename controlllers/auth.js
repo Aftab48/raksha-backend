@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 const PendingRegistration = require('../models/pendingRegistration');
 const { BadRequestError, UnAuthenticatedError } = require('../ErrorHandlers');
-const { hashOtp, verifyOtpHash, sendOtpEmail } = require('../services/otp');
+const { hashOtp, verifyOtpHash, sendOtpEmail, sendOtpSMS } = require('../services/otp');
 
 const REGISTRATION_TTL_MINUTES = 10;
 const emailRegex = /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
@@ -95,6 +95,8 @@ const registerInit = async (req, res) => {
 
     const emailOtp = (await sendOtpEmail(normalizedEmail, 'registration')).otp;
 
+    const mobileOtp = await sendOtpSMS(normalizedPhone);
+
     const expiresAt = new Date(Date.now() + REGISTRATION_TTL_MINUTES * 60 * 1000);
 
     const pendingRegistration = await PendingRegistration.create({
@@ -103,14 +105,16 @@ const registerInit = async (req, res) => {
         phoneNumber: normalizedPhone,
         password,
         emailOtpHash: hashOtp(emailOtp),
+        mobileOtpHash: hashOtp(mobileOtp),
         expiresAt
     });
 
     res.status(StatusCodes.CREATED).json({
-        message: 'Registration initiated. Verify your email OTP to continue',
+        message: 'Registration initiated. Verify your email and mobile OTP to continue',
         registrationId: pendingRegistration._id,
         expiresAt,
-        email: getMaskedValue(normalizedEmail, 'email')
+        email: getMaskedValue(normalizedEmail, 'email'),
+        phoneNumber: getMaskedValue(normalizedPhone, 'phone')
     });
 };
 
@@ -153,12 +157,54 @@ const verifyEmailOtp = async (req, res) => {
     });
 };
 
+//verify mobile otp while checking the pending registration status and incrementing OTP attempts on failure, if OTP is valid mark mobile as verified
+const verifyMobileOtp = async (req, res) => {
+    const { registrationId, otp } = req.body;
+    const pendingRegistration = await ensureRegistrationIsActive(registrationId);
+
+    if (!otp) {
+        throw new BadRequestError('Please provide mobile OTP');
+    }
+
+    if (pendingRegistration.mobileVerified) {
+        return res.status(StatusCodes.OK).json({
+            message: 'Mobile OTP already verified',
+            mobileVerified: true
+        });
+    }
+
+    const isValid = verifyOtpHash(otp, pendingRegistration.mobileOtpHash);
+    
+    if (!isValid) {
+        pendingRegistration.mobileOtpAttempts += 1;
+        if (pendingRegistration.mobileOtpAttempts >= pendingRegistration.maxOtpAttempts) {
+            await PendingRegistration.findByIdAndDelete(pendingRegistration._id);
+            throw new UnAuthenticatedError('Too many invalid mobile OTP attempts. Please register again');
+        }
+        await pendingRegistration.save();
+        throw new UnAuthenticatedError('Invalid mobile OTP');
+    }
+
+    pendingRegistration.mobileVerified = true;
+    await pendingRegistration.save();
+
+    res.status(StatusCodes.OK).json({
+        message: 'Mobile OTP verified successfully',
+        mobileVerified: true
+    });
+}
+
+
+//complete registration by copying the pending registration details
 const completeRegistration = async (req, res) => {
     const { registrationId } = req.body;
     const pendingRegistration = await ensureRegistrationIsActive(registrationId);
 
     if (!pendingRegistration.emailVerified) {
         throw new BadRequestError('Please verify your email OTP before completing registration');
+    }
+    if (!pendingRegistration.mobileVerified) {
+        throw new BadRequestError('Please verify your mobile OTP before completing registration');
     }
 
     const existingUser = await User.findOne({
@@ -214,6 +260,7 @@ const login = async (req, res) => {
 module.exports = {
     registerInit,
     verifyEmailOtp,
+    verifyMobileOtp,
     completeRegistration,
     login
 };
