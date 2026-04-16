@@ -1,8 +1,13 @@
 const jwt = require('jsonwebtoken');
 const { UnAuthenticatedError } = require('../ErrorHandlers');
 
-const isDevBypassEnabled = () =>
-    process.env.NODE_ENV === 'development' || process.env.DASHBOARD_DEV_MODE === 'true';
+const isDevBypassEnabled = () => {
+    if (typeof process.env.DASHBOARD_DEV_MODE === 'string') {
+        return process.env.DASHBOARD_DEV_MODE === 'true';
+    }
+
+    return process.env.NODE_ENV !== 'production';
+};
 
 const parseBearerToken = (req) => {
     const header = req.headers.authorization;
