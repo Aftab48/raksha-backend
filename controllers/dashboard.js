@@ -43,6 +43,22 @@ const normalizeTriggerType = (value) => {
     return normalized === 'auto' ? 'auto' : 'manual';
 };
 
+const normalizeIncidentType = (value) => {
+    const normalized = String(value || 'sos').toLowerCase();
+    return normalized === 'panic' ? 'panic' : 'sos';
+};
+
+const normalizeIncidentTypeFilter = (value) => {
+    const normalized = String(value || 'all').toLowerCase();
+    if (normalized === 'panic') {
+        return { incidentType: 'panic' };
+    }
+    if (normalized === 'sos') {
+        return { incidentType: 'sos' };
+    }
+    return {};
+};
+
 const normalizeStatusFilter = (value) => {
     const normalized = String(value || 'all').toLowerCase();
     if (normalized === 'active') {
@@ -65,6 +81,24 @@ const ensureObjectId = (id) => {
         throw new BadRequestError('Invalid alert id');
     }
 };
+
+const normalizePhone = (value) => String(value || '').replace(/[^\d]/g, '');
+
+const phoneMatches = (left, right) => {
+    const normalizedLeft = normalizePhone(left);
+    const normalizedRight = normalizePhone(right);
+    if (!normalizedLeft || !normalizedRight) {
+        return false;
+    }
+    return normalizedLeft === normalizedRight || normalizedLeft.slice(-10) === normalizedRight.slice(-10);
+};
+
+const serializeUserNote = (note) => ({
+    id: String(note._id),
+    message: note.message,
+    sent_at: note.sentAt?.toISOString?.() || null,
+    sent_by: note.sentBy?.operatorName || null
+});
 
 const getDateRangeFilter = (from, to) => {
     const fromDate = parseIsoDate(from);
@@ -243,6 +277,10 @@ const createSosAlert = async (req, res) => {
     const lng = asFiniteNumber(payload.lng);
     const confidenceScore = asFiniteNumber(payload.confidence_score ?? payload.confidenceScore);
     const triggerType = normalizeTriggerType(payload.trigger_type || payload.triggerType);
+    const incidentType = normalizeIncidentType(payload.incident_type || payload.incidentType);
+    const callRequested = Boolean(payload.call_requested ?? payload.callRequested ?? false);
+    const callRequestedAt = parseIsoDate(payload.call_requested_at || payload.callRequestedAt);
+    const userId = payload.user_id || payload.userId || null;
     const alertTime = parseIsoDate(payload.timestamp) || new Date();
 
     if (!userName) {
@@ -255,7 +293,11 @@ const createSosAlert = async (req, res) => {
     const alert = await SosAlert.create({
         userName,
         phone,
+        userId: mongoose.Types.ObjectId.isValid(userId) ? userId : null,
         triggerType,
+        incidentType,
+        callRequested,
+        callRequestedAt: callRequested ? (callRequestedAt || alertTime) : null,
         confidenceScore: triggerType === 'auto' ? confidenceScore : null,
         initialLat: lat,
         initialLng: lng,
@@ -287,11 +329,13 @@ const getAlerts = async (req, res) => {
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
     const statusFilter = normalizeStatusFilter(req.query.status);
+    const incidentTypeFilter = normalizeIncidentTypeFilter(req.query.incident_type || req.query.incidentType);
     const dateRange = getDateRangeFilter(req.query.from, req.query.to);
     const triggerType = req.query.trigger_type || req.query.triggerType;
 
     const query = {
-        ...statusFilter
+        ...statusFilter,
+        ...incidentTypeFilter
     };
 
     if (dateRange) {
@@ -445,6 +489,71 @@ const saveAlertNotes = async (req, res) => {
     return res.status(StatusCodes.OK).json({ alert: serializeAlert(alert) });
 };
 
+const sendUserNote = async (req, res) => {
+    const { id } = req.params;
+    ensureObjectId(id);
+
+    const message = typeof req.body.message === 'string' ? req.body.message.trim() : '';
+    if (!message) {
+        throw new BadRequestError('Please provide message');
+    }
+
+    const alert = await SosAlert.findById(id);
+    if (!alert) {
+        return res.status(StatusCodes.NOT_FOUND).json({ msg: 'Alert not found' });
+    }
+
+    const note = {
+        message,
+        sentAt: new Date(),
+        sentBy: {
+            operatorId: req.operator?.id || null,
+            operatorName: req.operator?.name || DEFAULT_OPERATOR
+        }
+    };
+    alert.userNotes.push(note);
+    await alert.save();
+
+    const savedNote = alert.userNotes[alert.userNotes.length - 1];
+    const payload = {
+        sos_id: String(alert._id),
+        note: serializeUserNote(savedNote)
+    };
+    emitDashboardEvent('sos:user_note', payload);
+
+    return res.status(StatusCodes.OK).json({
+        success: true,
+        note: payload.note
+    });
+};
+
+const getUserNotes = async (req, res) => {
+    const { id } = req.params;
+    ensureObjectId(id);
+
+    const alert = await SosAlert.findById(id).lean();
+    if (!alert) {
+        return res.status(StatusCodes.NOT_FOUND).json({ msg: 'Alert not found' });
+    }
+
+    const userPhone = req.user?.phoneNumber;
+    if (!phoneMatches(alert.phone, userPhone)) {
+        return res.status(StatusCodes.FORBIDDEN).json({ msg: 'Access denied for this alert' });
+    }
+
+    const sinceDate = parseIsoDate(req.query.since);
+    const notes = Array.isArray(alert.userNotes) ? alert.userNotes : [];
+    const filtered = sinceDate
+        ? notes.filter((note) => note.sentAt && new Date(note.sentAt).getTime() > sinceDate.getTime())
+        : notes;
+
+    const serialized = filtered
+        .sort((left, right) => new Date(left.sentAt).getTime() - new Date(right.sentAt).getTime())
+        .map(serializeUserNote);
+
+    return res.status(StatusCodes.OK).json({ notes: serialized });
+};
+
 const addAlertLocationUpdate = async (req, res) => {
     const { id } = req.params;
     ensureObjectId(id);
@@ -510,6 +619,8 @@ module.exports = {
     resolveAlert,
     addAlertLocationUpdate,
     saveAlertNotes,
+    sendUserNote,
+    getUserNotes,
     getStats,
     getHealth
 };
