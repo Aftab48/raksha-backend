@@ -9,7 +9,7 @@ const {
     saveAlertNotes,
     getStats,
     getHealth
-} = require('../controlllers/dashboard');
+} = require('../controllers/dashboard');
 const {
     authenticateDashboardOperator,
     authenticateSosIngress

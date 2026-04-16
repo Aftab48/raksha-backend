@@ -9,7 +9,7 @@ const {
     getEvidenceFrames,
     getEvidenceChunkFile,
     getEvidenceFramesGallery
-} = require('../controlllers/evidence');
+} = require('../controllers/evidence');
 
 const router = express.Router();
 

@@ -1,4 +1,4 @@
-const PoliceAlert = require('../models/policeAlert');
+const PoliceAlert = require('../models/policeAlerts');
 const { BadRequestError, UnAuthenticatedError } = require('../ErrorHandlers');
 
 const savePoliceAlert = async (req, res) => {

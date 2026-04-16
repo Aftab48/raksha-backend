@@ -2,7 +2,7 @@ const {
     saveUserTrustedContact,
     getUserTrustedContacts,
     deleteUserTrustedContact
-} = require('../controlllers/user');
+} = require('../controllers/user');
 const express = require('express');
 const router = express.Router();
 const { authenticateUser } = require('../Middlewares/authenticate');

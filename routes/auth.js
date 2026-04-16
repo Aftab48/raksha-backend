@@ -4,7 +4,7 @@ const {
     verifyEmailOtp,
     completeRegistration,
     verifyMobileOtp
-} = require('../controlllers/auth.js');
+} = require('../controllers/auth.js');
 const express = require('express');
 
 const router = express.Router();
