@@ -8,6 +8,7 @@ const notFound = require('./Middlewares/notFound');
 const errorHandlerMiddleware = require('./Middlewares/errorHandlerMiddleware');
 const authRouter = require('./routes/auth');
 const userRouter = require('./routes/user');
+const policeAlertsRouter = require('./routes/policeAlerts');
 
 
 const app = express();
@@ -23,6 +24,7 @@ app.get('/', (req, res) => {
 
 app.use('/api/v1', authRouter);
 app.use('/api/v1', userRouter);
+app.use('/api/v1', policeAlertsRouter);
 
 //error handling middlewares
 app.use(notFound);
