@@ -1,14 +1,13 @@
 require('dotenv').config();
 const express = require('express');
 
-
 //middlewares and utils
 const connectDb = require('./db/connectDb');
 const notFound = require('./Middlewares/notFound');
 const errorHandlerMiddleware = require('./Middlewares/errorHandlerMiddleware');
 const authRouter = require('./routes/auth');
 const userRouter = require('./routes/user');
-
+const evidenceRouter = require('./routes/evidence');
 
 const app = express();
 
@@ -19,16 +18,17 @@ app.use(express.json());
 //routes
 app.get('/', (req, res) => {
     res.send('Welcome to SafeSphere API');
-})
+});
 
 app.use('/api/v1', authRouter);
 app.use('/api/v1', userRouter);
+app.use('/api/v1', evidenceRouter);
 
 //error handling middlewares
 app.use(notFound);
 app.use(errorHandlerMiddleware);
 
-const start = async() => {
+const start = async () => {
     try {
         await connectDb(process.env.MONGO_URI);
         app.listen(port, () => {
@@ -37,6 +37,6 @@ const start = async() => {
     } catch (error) {
         console.error('Error starting the server: ', error);
     }
-}
+};
 
 start();
