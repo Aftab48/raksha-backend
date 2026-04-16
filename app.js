@@ -12,6 +12,7 @@ const userRouter = require('./routes/user');
 const evidenceRouter = require('./routes/evidence');
 const dashboardRouter = require('./routes/dashboard');
 const { initDashboardSocket } = require('./socket/dashboardSocket');
+const policeAlertsRouter = require('./routes/policeAlerts');
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use('/api/v1', authRouter);
 app.use('/api/v1', userRouter);
 app.use('/api/v1', evidenceRouter);
 app.use('/api/v1', dashboardRouter);
+app.use('/api/v1', policeAlertsRouter);
 
 //error handling middlewares
 app.use(notFound);
